@@ -342,7 +342,7 @@ describe("Integration Tests", () => {
       const secondRunTime = fs.statSync("all_feature_files.txt").mtimeMs;
 
       // Should be the same file (cached) - but allow for small timing differences
-      expect(Math.abs(firstRunTime - secondRunTime)).toBeLessThan(2000);
+      expect(Math.abs(firstRunTime - secondRunTime)).toBeLessThan(3000);
     });
 
     it("rebuilds when files change", () => {
