@@ -1,6 +1,6 @@
 import * as fs from "fs-extra";
 import * as path from "path";
-import glob from "glob";
+import { glob } from "glob";
 
 // Config file support
 const CONFIG_FILE = "bundleFeature.config.json";
@@ -31,9 +31,56 @@ process.argv.slice(2).forEach((arg) => {
 
 if (fileArgs.length === 0) {
   console.error(
-    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ...\n       or: provide files in bundleFeature.config.json"
+    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ... <glob1> <glob2> ...\n" +
+      "       or: provide files in bundleFeature.config.json\n" +
+      "Examples:\n" +
+      "  ts-node bundleFeature.ts src/**/*.ts\n" +
+      "  ts-node bundleFeature.ts *.rb app/**/*.rb\n" +
+      "  ts-node bundleFeature.ts --depth=3 src/components/*.tsx"
   );
   process.exit(1);
+}
+
+// Expand glob patterns to actual file paths
+function expandGlobs(patterns: string[]): string[] {
+  const expandedFiles: string[] = [];
+  const seenFiles = new Set<string>();
+
+  for (const pattern of patterns) {
+    try {
+      // Check if it's a glob pattern (contains *, ?, [, ], {, })
+      const isGlob = /[*?[\]{}]/.test(pattern);
+
+      if (isGlob) {
+        const matches = glob.sync(pattern, {
+          nodir: true, // Don't include directories
+          absolute: false, // Return relative paths
+          cwd: process.cwd(), // Use current working directory
+        });
+
+        for (const match of matches) {
+          const resolvedPath = path.resolve(match);
+          if (!seenFiles.has(resolvedPath)) {
+            expandedFiles.push(match);
+            seenFiles.add(resolvedPath);
+          }
+        }
+      } else {
+        // Regular file path
+        const resolvedPath = path.resolve(pattern);
+        if (!seenFiles.has(resolvedPath)) {
+          expandedFiles.push(pattern);
+          seenFiles.add(resolvedPath);
+        }
+      }
+    } catch (err: any) {
+      warnings.push(
+        `Failed to expand glob pattern: ${pattern} (${err.message})`
+      );
+    }
+  }
+
+  return expandedFiles;
 }
 
 const CONTEXT_DIR = "feature-context";
@@ -177,14 +224,27 @@ async function getAllFiles(dir: string): Promise<string[]> {
 // Main async logic
 async function main() {
   try {
+    // Expand glob patterns to actual file paths
+    const expandedFiles = expandGlobs(fileArgs);
+
+    if (expandedFiles.length === 0) {
+      console.error("No files found matching the provided patterns.");
+      process.exit(1);
+    }
+
+    console.log(`Found ${expandedFiles.length} files to process:`);
+    expandedFiles.forEach((file) => console.log(`  - ${file}`));
+
     await fs.ensureDir(CONTEXT_DIR);
     await Promise.all(
-      fileArgs.map((file) => copyFileWithMap(file, CONTEXT_DIR))
+      expandedFiles.map((file) => copyFileWithMap(file, CONTEXT_DIR))
     );
 
     // Find all referenced files recursively
-    const seenFiles = new Set<string>(fileArgs.map((f) => path.resolve(f)));
-    const referencedFiles = findReferences(fileArgs, depthArg, seenFiles);
+    const seenFiles = new Set<string>(
+      expandedFiles.map((f) => path.resolve(f))
+    );
+    const referencedFiles = findReferences(expandedFiles, depthArg, seenFiles);
 
     // Copy referenced files/directories recursively in parallel
     await Promise.all(
