@@ -2,10 +2,22 @@ import * as fs from "fs-extra";
 import * as path from "path";
 import glob from "glob";
 
-// 1. Get file list from command line
-const inputFiles = process.argv.slice(2);
-if (inputFiles.length === 0) {
-  console.error("Usage: ts-node bundleFeature.ts <file1> <file2> ...");
+// Parse CLI arguments for --depth
+let depthArg = 1;
+const fileArgs: string[] = [];
+process.argv.slice(2).forEach((arg) => {
+  if (arg.startsWith("--depth=")) {
+    const val = parseInt(arg.split("=")[1], 10);
+    if (!isNaN(val) && val > 0) depthArg = val;
+  } else {
+    fileArgs.push(arg);
+  }
+});
+
+if (fileArgs.length === 0) {
+  console.error(
+    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ..."
+  );
   process.exit(1);
 }
 
@@ -42,48 +54,70 @@ function copyDirWithMap(srcDir: string, destDir: string) {
   });
 }
 
-// 2. Copy selected files
-fs.ensureDirSync(CONTEXT_DIR);
-inputFiles.forEach((file) => {
-  copyFileWithMap(file, CONTEXT_DIR);
-});
-
-// 3. Parse for references (simple regex for JS/TS/Ruby)
+// Reference regexes
 const referenceRegexes = [
   /import\s+.*?from\s+['"](.+?)['"]/g, // JS/TS import
   /require\(['"](.+?)['"]\)/g, // JS/TS require
   /require_relative\s+['"](.+?)['"]/g, // Ruby require_relative
 ];
 
-const referencedFiles = new Set<string>();
-
-inputFiles.forEach((file) => {
-  const content = fs.readFileSync(file, "utf8");
-  referenceRegexes.forEach((regex) => {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      let ref = match[1];
-      // Try to resolve relative paths only (not node_modules or gems)
-      if (ref.startsWith(".")) {
-        const resolved = path.resolve(path.dirname(file), ref);
-        if (fs.existsSync(resolved)) {
-          referencedFiles.add(resolved);
-        } else {
-          // Try with common extensions
-          const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
-          for (const ext of exts) {
-            if (fs.existsSync(resolved + ext)) {
-              referencedFiles.add(resolved + ext);
-              break;
+// Recursively find all referenced files up to a given depth
+function findReferences(
+  files: string[],
+  maxDepth: number,
+  seen: Set<string>
+): Set<string> {
+  const referenced = new Set<string>();
+  function helper(currentFiles: string[], depth: number) {
+    if (depth > maxDepth) return;
+    for (const file of currentFiles) {
+      if (!fs.existsSync(file) || seen.has(path.resolve(file))) continue;
+      seen.add(path.resolve(file));
+      const content = fs.readFileSync(file, "utf8");
+      for (const regex of referenceRegexes) {
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+          let ref = match[1];
+          if (ref.startsWith(".")) {
+            const resolved = path.resolve(path.dirname(file), ref);
+            if (fs.existsSync(resolved)) {
+              if (!seen.has(path.resolve(resolved))) {
+                referenced.add(resolved);
+                helper([resolved], depth + 1);
+              }
+            } else {
+              // Try with common extensions
+              const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
+              for (const ext of exts) {
+                if (fs.existsSync(resolved + ext)) {
+                  if (!seen.has(path.resolve(resolved + ext))) {
+                    referenced.add(resolved + ext);
+                    helper([resolved + ext], depth + 1);
+                  }
+                  break;
+                }
+              }
             }
           }
         }
       }
     }
-  });
+  }
+  helper(files, 1);
+  return referenced;
+}
+
+// 1. Copy selected files
+fs.ensureDirSync(CONTEXT_DIR);
+fileArgs.forEach((file) => {
+  copyFileWithMap(file, CONTEXT_DIR);
 });
 
-// 4. Copy referenced files/directories recursively
+// 2. Find all referenced files recursively
+const seenFiles = new Set<string>(fileArgs.map((f) => path.resolve(f)));
+const referencedFiles = findReferences(fileArgs, depthArg, seenFiles);
+
+// 3. Copy referenced files/directories recursively
 referencedFiles.forEach((file) => {
   if (fs.existsSync(file)) {
     const stats = fs.statSync(file);
@@ -96,7 +130,7 @@ referencedFiles.forEach((file) => {
   }
 });
 
-// 5. Recursively collect all files in CONTEXT_DIR
+// 4. Recursively collect all files in CONTEXT_DIR
 function getAllFiles(dir: string): string[] {
   let results: string[] = [];
   const list = fs.readdirSync(dir);
