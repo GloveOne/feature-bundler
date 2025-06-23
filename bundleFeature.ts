@@ -35,6 +35,8 @@ process.argv.slice(2).forEach((arg) => {
     dryRun = true;
   } else if (arg === "-v" || arg === "--verbose") {
     verbose = true;
+  } else if (arg === "--no-cache") {
+    useCache = false;
   } else {
     fileArgs.push(arg);
   }
@@ -114,6 +116,40 @@ const contextToOriginal: Record<string, string> = {};
 const copiedFiles = new Set<string>();
 // Array to collect warnings/errors
 const warnings: string[] = [];
+
+const CACHE_FILE = ".bundleFeature.cache.json";
+
+let useCache = true;
+
+interface CacheEntry {
+  mtimeMs: number;
+  size: number;
+}
+interface CacheData {
+  files: Record<string, CacheEntry>;
+  inputHash: string;
+}
+
+function hashInput(files: string[], depth: number): string {
+  return require("crypto")
+    .createHash("sha1")
+    .update(JSON.stringify({ files, depth }))
+    .digest("hex");
+}
+
+function loadCache(): CacheData | null {
+  if (!useCache || !fs.existsSync(CACHE_FILE)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveCache(data: CacheData) {
+  if (!useCache) return;
+  fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+}
 
 // Async helper to copy a file and record its mapping
 async function copyFileWithMap(src: string, destDir: string) {
@@ -267,8 +303,49 @@ async function main() {
       process.exit(1);
     }
 
-    console.log(`Found ${expandedFiles.length} files to process:`);
-    expandedFiles.forEach((file) => console.log(`  - ${file}`));
+    // Load cache and compute input hash
+    const inputHash = hashInput(expandedFiles, depthArg);
+    const cache = loadCache();
+    const cacheFiles =
+      cache && cache.inputHash === inputHash ? cache.files : {};
+    if (verbose && useCache) {
+      if (cache && cache.inputHash === inputHash) {
+        console.log(`[CACHE] Loaded cache for this input set.`);
+      } else {
+        console.log(`[CACHE] No valid cache for this input set.`);
+      }
+    }
+
+    // Filter files to process based on cache
+    const filesToProcess: string[] = [];
+    for (const file of expandedFiles) {
+      try {
+        const stat = await fs.stat(file);
+        const cacheEntry = cacheFiles?.[file];
+        if (
+          cacheEntry &&
+          cacheEntry.mtimeMs === stat.mtimeMs &&
+          cacheEntry.size === stat.size
+        ) {
+          logVerbose(`[CACHE] Skipping unchanged file: ${file}`);
+          continue;
+        }
+        filesToProcess.push(file);
+      } catch {
+        filesToProcess.push(file);
+      }
+    }
+
+    console.log(
+      `Found ${expandedFiles.length} files to process (${filesToProcess.length} new/changed):`
+    );
+    expandedFiles.forEach((file) => {
+      if (filesToProcess.includes(file)) {
+        console.log(`  - ${file}`);
+      } else if (verbose) {
+        console.log(`  - ${file} (cached)`);
+      }
+    });
 
     if (dryRun) {
       // Find all referenced files recursively
@@ -303,7 +380,7 @@ async function main() {
 
     await fs.ensureDir(CONTEXT_DIR);
     await Promise.all(
-      expandedFiles.map((file) => copyFileWithMap(file, CONTEXT_DIR))
+      filesToProcess.map((file) => copyFileWithMap(file, CONTEXT_DIR))
     );
 
     // Find all referenced files recursively
@@ -411,6 +488,19 @@ async function main() {
     if (warnings.length > 0) {
       console.warn("\nWARNINGS:");
       warnings.forEach((w) => console.warn("- " + w));
+    }
+
+    // Update cache
+    if (useCache) {
+      const newCache: CacheData = { files: {}, inputHash };
+      for (const file of expandedFiles) {
+        try {
+          const stat = await fs.stat(file);
+          newCache.files[file] = { mtimeMs: stat.mtimeMs, size: stat.size };
+        } catch {}
+      }
+      saveCache(newCache);
+      if (verbose) console.log(`[CACHE] Cache updated.`);
     }
   } catch (err: any) {
     console.error("Fatal error:", err);
