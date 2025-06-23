@@ -27,13 +27,18 @@ const projectRoot = process.cwd();
 
 // Map from context file absolute path to original relative path
 const contextToOriginal: Record<string, string> = {};
+// Set to track already-copied files (absolute original paths)
+const copiedFiles = new Set<string>();
 
 // Async helper to copy a file and record its mapping
 async function copyFileWithMap(src: string, destDir: string) {
+  const absSrc = path.resolve(src);
+  if (copiedFiles.has(absSrc)) return; // Deduplicate
   const dest = path.join(destDir, path.basename(src));
   await fs.copy(src, dest);
   const relSrc = path.relative(projectRoot, src);
   contextToOriginal[path.resolve(dest)] = relSrc;
+  copiedFiles.add(absSrc);
 }
 
 // Async helper to copy a directory recursively and record mappings
@@ -48,9 +53,8 @@ async function copyDirWithMap(srcDir: string, destDir: string) {
       if (stat.isDirectory()) {
         await copyDirWithMap(srcPath, destPath);
       } else {
-        await fs.copy(srcPath, destPath);
-        const relSrc = path.relative(projectRoot, srcPath);
-        contextToOriginal[path.resolve(destPath)] = relSrc;
+        await copyFileWithMap(srcPath, destDir);
+        // contextToOriginal and copiedFiles handled in copyFileWithMap
       }
     })
   );
@@ -154,6 +158,8 @@ async function main() {
 
   // Recursively collect all files in CONTEXT_DIR
   const allFiles = await getAllFiles(CONTEXT_DIR);
+  // Deduplicate output files by their resolved path
+  const outputSeen = new Set<string>();
   // Sort files by their original folder and filename
   const allFilesWithOriginal = allFiles.map((file) => {
     const original = contextToOriginal[path.resolve(file)] || file;
@@ -171,6 +177,9 @@ async function main() {
   let lastDir = "";
   const outputArr = await Promise.all(
     allFilesWithOriginal.map(async ({ file, original }) => {
+      const resolved = path.resolve(file);
+      if (outputSeen.has(resolved)) return ""; // Deduplicate output
+      outputSeen.add(resolved);
       const dir = path.dirname(original);
       let section = "";
       if (dir !== lastDir) {
@@ -182,7 +191,7 @@ async function main() {
     })
   );
 
-  const output = outputArr.join("\n");
+  const output = outputArr.filter(Boolean).join("\n");
   await fs.writeFile(OUTPUT_FILE, output);
   console.log(`Done! Output written to ${OUTPUT_FILE}`);
 }
