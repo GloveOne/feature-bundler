@@ -90,6 +90,16 @@ const CONTEXT_DIR = "feature-context";
 const OUTPUT_FILE = "all_feature_files.txt";
 const projectRoot = process.cwd();
 
+// Statistics tracking
+let stats = {
+  startTime: Date.now(),
+  filesCopied: 0,
+  directoriesCopied: 0,
+  totalLines: 0,
+  totalSize: 0,
+  warnings: 0,
+};
+
 // Map from context file absolute path to original relative path
 const contextToOriginal: Record<string, string> = {};
 // Set to track already-copied files (absolute original paths)
@@ -107,8 +117,10 @@ async function copyFileWithMap(src: string, destDir: string) {
     const relSrc = path.relative(projectRoot, src);
     contextToOriginal[path.resolve(dest)] = relSrc;
     copiedFiles.add(absSrc);
+    stats.filesCopied++;
   } catch (err: any) {
     warnings.push(`Failed to copy file: ${src} -> ${dest} (${err.message})`);
+    stats.warnings++;
   }
 }
 
@@ -116,6 +128,7 @@ async function copyFileWithMap(src: string, destDir: string) {
 async function copyDirWithMap(srcDir: string, destDir: string) {
   try {
     await fs.ensureDir(destDir);
+    stats.directoriesCopied++;
     const entries = await fs.readdir(srcDir);
     await Promise.all(
       entries.map(async (entry) => {
@@ -130,6 +143,7 @@ async function copyDirWithMap(srcDir: string, destDir: string) {
           }
         } catch (err: any) {
           warnings.push(`Failed to stat/copy: ${srcPath} (${err.message})`);
+          stats.warnings++;
         }
       })
     );
@@ -137,6 +151,7 @@ async function copyDirWithMap(srcDir: string, destDir: string) {
     warnings.push(
       `Failed to copy directory: ${srcDir} -> ${destDir} (${err.message})`
     );
+    stats.warnings++;
   }
 }
 
@@ -253,6 +268,17 @@ async function main() {
         console.log("\nReferenced files to copy:");
         referencedList.forEach((file) => console.log(`  - ${file}`));
       }
+
+      // Calculate dry run statistics
+      const endTime = Date.now();
+      const processingTime = endTime - stats.startTime;
+      const totalFiles = expandedFiles.length + referencedList.length;
+
+      console.log(`\n📊 DRY RUN SUMMARY:`);
+      console.log(`   Initial files: ${expandedFiles.length}`);
+      console.log(`   Referenced files: ${referencedList.length}`);
+      console.log(`   Total files to process: ${totalFiles}`);
+      console.log(`   Processing time: ${processingTime}ms`);
       console.log(`\nWould write concatenated output to: ${OUTPUT_FILE}`);
       console.log("(No files or directories were actually copied or written.)");
       return;
@@ -325,10 +351,12 @@ async function main() {
         let content = "";
         try {
           content = await fs.readFile(file, "utf8");
+          stats.totalLines += content.split("\n").length;
         } catch (err: any) {
           warnings.push(
             `Failed to read file for output: ${file} (${err.message})`
           );
+          stats.warnings++;
         }
         return `${section}\n==================== ${original} ====================\n\n${content}`;
       })
@@ -344,7 +372,25 @@ async function main() {
 
     const output = warningsSection + outputArr.filter(Boolean).join("\n");
     await fs.writeFile(OUTPUT_FILE, output);
-    console.log(`Done! Output written to ${OUTPUT_FILE}`);
+
+    // Calculate final statistics
+    const endTime = Date.now();
+    const processingTime = endTime - stats.startTime;
+    const outputStats = await fs.stat(OUTPUT_FILE);
+    stats.totalSize = outputStats.size;
+
+    // Display summary
+    console.log(`\n📊 SUMMARY:`);
+    console.log(`   Files copied: ${stats.filesCopied}`);
+    console.log(`   Directories copied: ${stats.directoriesCopied}`);
+    console.log(`   Total lines written: ${stats.totalLines.toLocaleString()}`);
+    console.log(
+      `   Output file size: ${(stats.totalSize / 1024).toFixed(2)} KB`
+    );
+    console.log(`   Processing time: ${processingTime}ms`);
+    console.log(`   Warnings: ${stats.warnings}`);
+    console.log(`\n✅ Done! Output written to ${OUTPUT_FILE}`);
+
     if (warnings.length > 0) {
       console.warn("\nWARNINGS:");
       warnings.forEach((w) => console.warn("- " + w));
