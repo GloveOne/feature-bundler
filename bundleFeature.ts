@@ -17,6 +17,12 @@ if (fs.existsSync(CONFIG_FILE)) {
   }
 }
 
+let verbose = false;
+
+function logVerbose(msg: string) {
+  if (verbose) console.log(msg);
+}
+
 // Parse CLI arguments for --depth and --dry-run
 let depthArg = configDepth || 1;
 let dryRun = false;
@@ -27,6 +33,8 @@ process.argv.slice(2).forEach((arg) => {
     if (!isNaN(val) && val > 0) depthArg = val;
   } else if (arg === "--dry-run") {
     dryRun = true;
+  } else if (arg === "-v" || arg === "--verbose") {
+    verbose = true;
   } else {
     fileArgs.push(arg);
   }
@@ -110,9 +118,13 @@ const warnings: string[] = [];
 // Async helper to copy a file and record its mapping
 async function copyFileWithMap(src: string, destDir: string) {
   const absSrc = path.resolve(src);
-  if (copiedFiles.has(absSrc)) return; // Deduplicate
+  if (copiedFiles.has(absSrc)) {
+    logVerbose(`[SKIP] Duplicate file not copied: ${src}`);
+    return; // Deduplicate
+  }
   const dest = path.join(destDir, path.basename(src));
   try {
+    logVerbose(`[COPY] File: ${src} -> ${dest}`);
     await fs.copy(src, dest);
     const relSrc = path.relative(projectRoot, src);
     contextToOriginal[path.resolve(dest)] = relSrc;
@@ -127,6 +139,7 @@ async function copyFileWithMap(src: string, destDir: string) {
 // Async helper to copy a directory recursively and record mappings
 async function copyDirWithMap(srcDir: string, destDir: string) {
   try {
+    logVerbose(`[COPY] Directory: ${srcDir} -> ${destDir}`);
     await fs.ensureDir(destDir);
     stats.directoriesCopied++;
     const entries = await fs.readdir(srcDir);
@@ -184,6 +197,7 @@ function findReferences(
               const resolved = path.resolve(path.dirname(file), ref);
               if (fs.existsSync(resolved)) {
                 if (!seen.has(path.resolve(resolved))) {
+                  logVerbose(`[REF] Found reference: ${file} -> ${resolved}`);
                   referenced.add(resolved);
                   helper([resolved], depth + 1);
                 }
@@ -193,6 +207,9 @@ function findReferences(
                 for (const ext of exts) {
                   if (fs.existsSync(resolved + ext)) {
                     if (!seen.has(path.resolve(resolved + ext))) {
+                      logVerbose(
+                        `[REF] Found reference: ${file} -> ${resolved + ext}`
+                      );
                       referenced.add(resolved + ext);
                       helper([resolved + ext], depth + 1);
                     }
