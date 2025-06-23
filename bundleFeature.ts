@@ -6,12 +6,16 @@ import { glob } from "glob";
 const CONFIG_FILE = "bundleFeature.config.json";
 let configFiles: string[] = [];
 let configDepth: number | undefined = undefined;
+let configAliases: Record<string, string> = {};
 if (fs.existsSync(CONFIG_FILE)) {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
     if (Array.isArray(config.files)) configFiles = config.files;
     if (typeof config.depth === "number" && config.depth > 0)
       configDepth = config.depth;
+    if (config.aliases && typeof config.aliases === "object") {
+      configAliases = config.aliases;
+    }
   } catch (err: any) {
     console.warn(`Warning: Failed to parse ${CONFIG_FILE}: ${err.message}`);
   }
@@ -211,6 +215,21 @@ const referenceRegexes = [
   /require_relative\s+['"](.+?)['"]/g, // Ruby require_relative
 ];
 
+// Resolve path aliases
+function resolveAlias(ref: string, baseFile: string): string {
+  // Check if the reference starts with any alias
+  for (const [alias, aliasPath] of Object.entries(configAliases)) {
+    if (ref.startsWith(alias + "/") || ref === alias) {
+      const relativePath = ref.substring(alias.length);
+      const resolvedAliasPath = path.resolve(aliasPath);
+      return path.join(resolvedAliasPath, relativePath);
+    }
+  }
+
+  // If no alias matches, return the original reference
+  return ref;
+}
+
 // Recursively find all referenced files up to a given depth
 function findReferences(
   files: string[],
@@ -229,8 +248,13 @@ function findReferences(
           let match;
           while ((match = regex.exec(content)) !== null) {
             let ref = match[1];
-            if (ref.startsWith(".")) {
-              const resolved = path.resolve(path.dirname(file), ref);
+
+            // Resolve aliases first
+            const resolvedRef = resolveAlias(ref, file);
+
+            if (resolvedRef.startsWith(".")) {
+              // Handle relative paths
+              const resolved = path.resolve(path.dirname(file), resolvedRef);
               if (fs.existsSync(resolved)) {
                 if (!seen.has(path.resolve(resolved))) {
                   logVerbose(`[REF] Found reference: ${file} -> ${resolved}`);
@@ -245,6 +269,35 @@ function findReferences(
                     if (!seen.has(path.resolve(resolved + ext))) {
                       logVerbose(
                         `[REF] Found reference: ${file} -> ${resolved + ext}`
+                      );
+                      referenced.add(resolved + ext);
+                      helper([resolved + ext], depth + 1);
+                    }
+                    break;
+                  }
+                }
+              }
+            } else if (resolvedRef !== ref) {
+              // Handle aliased paths (non-relative)
+              const resolved = path.resolve(resolvedRef);
+              if (fs.existsSync(resolved)) {
+                if (!seen.has(path.resolve(resolved))) {
+                  logVerbose(
+                    `[REF] Found aliased reference: ${file} -> ${ref} -> ${resolved}`
+                  );
+                  referenced.add(resolved);
+                  helper([resolved], depth + 1);
+                }
+              } else {
+                // Try with common extensions
+                const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
+                for (const ext of exts) {
+                  if (fs.existsSync(resolved + ext)) {
+                    if (!seen.has(path.resolve(resolved + ext))) {
+                      logVerbose(
+                        `[REF] Found aliased reference: ${file} -> ${ref} -> ${
+                          resolved + ext
+                        }`
                       );
                       referenced.add(resolved + ext);
                       helper([resolved + ext], depth + 1);

@@ -1,0 +1,22 @@
+{
+  "files": [
+    "../netvacinas/app/services/gemini_api_service.rb",
+    "../netvacinas/app/graphql/graph/types/mutations/process_base64_file.rb",
+    "../netvacinas/app/graphql/graph/types/process_base64_file_input_type.rb",
+    "../netvacinas/app/graphql/graph/types/mutations/save_extracted_vaccine_applications.rb",
+    "../netvacinas/spec/graphql/mutations/save_extracted_vaccine_applications_spec.rb",
+    "../netvacinas-frontend/src/components/UploadShots/index.tsx",
+    "../netvacinas-frontend/src/components/UploadShots/form.tsx",
+    "../netvacinas-frontend/src/components/UploadShots/types.ts",
+    "../netvacinas-frontend/src/components/UploadShots/useUploadShots.ts",
+    "../netvacinas-frontend/src/components/UploadShots/EditableApplicationItem.tsx"
+  ],
+  "depth": 2,
+  "aliases": {
+    "@": "../netvacinas-frontend/src",
+    "~": "../netvacinas",
+    "components": "../netvacinas-frontend/src/components",
+    "services": "../netvacinas/app/services",
+    "graphql": "../netvacinas/app/graphql"
+  }
+}
