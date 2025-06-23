@@ -9,8 +9,21 @@ let configDepth: number | undefined = undefined;
 let configAliases: Record<string, string> = {};
 
 // Add this function to expand variables in strings
-function expandVars(str: string, vars: Record<string, string>): string {
-  return str.replace(/\$\{([^}]+)\}/g, (_, name) => vars[name] || "");
+export function expandVars(str: string, vars: Record<string, string>): string {
+  console.log(`🔧 expandVars called with:`, {
+    str,
+    vars: Object.keys(vars),
+    varsCount: Object.keys(vars).length,
+  });
+
+  const result = str.replace(/\$\{([^}]+)\}/g, (_, name) => {
+    const value = vars[name] || "";
+    console.log(`🔧 Variable expansion: ${name} -> ${value}`);
+    return value;
+  });
+
+  console.log(`🔧 expandVars result:`, result);
+  return result;
 }
 
 if (fs.existsSync(CONFIG_FILE)) {
@@ -71,43 +84,87 @@ if (fileArgs.length === 0) {
 }
 
 // Expand glob patterns to actual file paths
-function expandGlobs(patterns: string[]): string[] {
+export function expandGlobs(patterns: string[]): string[] {
+  console.log(`🌐 expandGlobs called with patterns:`, patterns);
+
   const expandedFiles: string[] = [];
   const seenFiles = new Set<string>();
 
   for (const pattern of patterns) {
+    console.log(`🔍 Processing pattern:`, pattern);
+
     try {
       // Check if it's a glob pattern (contains *, ?, [, ], {, })
       const isGlob = /[*?[\]{}]/.test(pattern);
+      console.log(`🔍 Pattern analysis:`, {
+        pattern,
+        isGlob,
+        containsWildcards: isGlob,
+      });
 
       if (isGlob) {
+        console.log(`🌐 Expanding glob pattern:`, pattern);
         const matches = glob.sync(pattern, {
           nodir: true, // Don't include directories
           absolute: false, // Return relative paths
           cwd: process.cwd(), // Use current working directory
         });
 
+        console.log(`🌐 Glob matches found:`, {
+          count: matches.length,
+          matches: matches.map((m) => path.basename(m)),
+        });
+
         for (const match of matches) {
           const resolvedPath = path.resolve(match);
+          console.log(`🔍 Processing glob match:`, {
+            match,
+            resolvedPath,
+            alreadySeen: seenFiles.has(resolvedPath),
+          });
+
           if (!seenFiles.has(resolvedPath)) {
             expandedFiles.push(match);
             seenFiles.add(resolvedPath);
+            console.log(`✅ Added to expanded files:`, path.basename(match));
+          } else {
+            console.log(`⏭️  Skipping duplicate:`, path.basename(match));
           }
         }
       } else {
         // Regular file path
+        console.log(`📁 Processing regular file path:`, pattern);
         const resolvedPath = path.resolve(pattern);
+        console.log(`🔍 Regular file analysis:`, {
+          pattern,
+          resolvedPath,
+          alreadySeen: seenFiles.has(resolvedPath),
+        });
+
         if (!seenFiles.has(resolvedPath)) {
           expandedFiles.push(pattern);
           seenFiles.add(resolvedPath);
+          console.log(`✅ Added to expanded files:`, path.basename(pattern));
+        } else {
+          console.log(`⏭️  Skipping duplicate:`, path.basename(pattern));
         }
       }
     } catch (err: any) {
+      console.error(`❌ Failed to expand glob pattern:`, {
+        pattern,
+        error: err.message,
+      });
       warnings.push(
         `Failed to expand glob pattern: ${pattern} (${err.message})`
       );
     }
   }
+
+  console.log(`📊 expandGlobs result:`, {
+    count: expandedFiles.length,
+    files: expandedFiles.map((f) => path.basename(f)),
+    fullPaths: expandedFiles,
+  });
 
   return expandedFiles;
 }
@@ -233,104 +290,374 @@ export function resolveAlias(
   baseFile: string,
   aliases: Record<string, string> = configAliases
 ): string {
+  console.log(`🔧 resolveAlias called with:`, {
+    ref,
+    baseFile: path.basename(baseFile),
+    aliases: Object.keys(aliases),
+    aliasesCount: Object.keys(aliases).length,
+  });
+
   // Check if the reference starts with any alias
   for (const [alias, aliasPath] of Object.entries(aliases)) {
+    console.log(`🔍 Checking alias:`, {
+      alias,
+      aliasPath,
+      ref,
+      startsWithAlias: ref.startsWith(alias + "/"),
+      exactMatch: ref === alias,
+    });
+
     if (ref.startsWith(alias + "/") || ref === alias) {
       const relativePath = ref.substring(alias.length);
       const resolvedAliasPath = path.resolve(aliasPath);
-      return path.join(resolvedAliasPath, relativePath);
+      const result = path.join(resolvedAliasPath, relativePath);
+
+      console.log(`✅ Alias resolved:`, {
+        alias,
+        relativePath,
+        resolvedAliasPath,
+        result,
+      });
+
+      return result;
     }
   }
 
   // If no alias matches, return the original reference
+  console.log(`❌ No alias matched, returning original:`, ref);
   return ref;
 }
 
 // Recursively find all referenced files up to a given depth
-function findReferences(
+export function findReferences(
   files: string[],
   maxDepth: number,
   seen: Set<string>
 ): Set<string> {
+  console.log(`🔍 findReferences called with:`, {
+    files: files.map((f) => path.basename(f)),
+    maxDepth,
+    seenSize: seen.size,
+    seenFiles: Array.from(seen).map((f) => path.basename(f)),
+  });
+
   const referenced = new Set<string>();
+  const originalFiles = new Set(files.map((f) => path.resolve(f)));
+
+  console.log(
+    `📋 Original files:`,
+    Array.from(originalFiles).map((f) => path.basename(f))
+  );
+
   function helper(currentFiles: string[], depth: number) {
-    if (depth > maxDepth) return;
+    console.log(`🔄 helper called with:`, {
+      files: currentFiles.map((f) => path.basename(f)),
+      depth,
+      maxDepth,
+      currentDepth: depth,
+      willSkip: depth > maxDepth,
+    });
+
+    if (depth > maxDepth) {
+      console.log(
+        `⏭️  Skipping due to depth > maxDepth (${depth} > ${maxDepth})`
+      );
+      return;
+    }
+
     for (const file of currentFiles) {
       try {
-        if (!fs.existsSync(file) || seen.has(path.resolve(file))) continue;
-        seen.add(path.resolve(file));
+        const absFile = path.resolve(file);
+        const exists = fs.existsSync(file);
+        const alreadySeen = seen.has(absFile);
+
+        console.log(`📁 About to process:`, {
+          file: path.basename(file),
+          absFile: path.basename(absFile),
+          exists,
+          alreadySeen,
+          depth,
+        });
+
+        if (!exists || alreadySeen) {
+          console.log(
+            `⏭️  Skipping ${path.basename(
+              file
+            )}: exists=${exists}, seen=${alreadySeen}`
+          );
+          continue;
+        }
+
+        seen.add(absFile);
+        console.log(`✅ Added ${path.basename(file)} to seen set`);
+
+        const isOriginalFile = originalFiles.has(absFile);
+        const shouldAdd = depth > 1 || !isOriginalFile;
+
+        console.log(`🔍 Processing ${path.basename(file)}:`, {
+          depth,
+          isOriginalFile,
+          depthGreaterThan1: depth > 1,
+          shouldAdd,
+          absFile: path.basename(absFile),
+        });
+
+        // Add to referenced set if it's not an original file, or if it's an original file but we're at depth > 1
+        if (shouldAdd) {
+          referenced.add(absFile);
+          console.log(`✅ Added ${path.basename(absFile)} to referenced set`);
+        } else {
+          console.log(
+            `❌ Not adding ${path.basename(absFile)} to referenced set`
+          );
+        }
+
         const content = fs.readFileSync(file, "utf8");
+        console.log(
+          `📄 File content (${path.basename(file)}):`,
+          content.substring(0, 100) + (content.length > 100 ? "..." : "")
+        );
+
+        let totalReferencesFound = 0;
         for (const regex of referenceRegexes) {
+          // Reset regex state for each file
+          regex.lastIndex = 0;
           let match;
+          let regexMatches = 0;
           while ((match = regex.exec(content)) !== null) {
+            regexMatches++;
+            totalReferencesFound++;
             let ref = match[1];
+            console.log(
+              `🔗 Found reference #${totalReferencesFound} (regex ${regexMatches}):`,
+              {
+                reference: ref,
+                fullMatch: match[0],
+                regexPattern: regex.source,
+              }
+            );
 
             // Resolve aliases first
             const resolvedRef = resolveAlias(ref, file);
+            console.log(`🔧 Resolved reference:`, {
+              original: ref,
+              resolved: resolvedRef,
+              changed: ref !== resolvedRef,
+            });
 
+            let nextFiles: string[] = [];
             if (resolvedRef.startsWith(".")) {
               // Handle relative paths
-              const resolved = path.resolve(path.dirname(file), resolvedRef);
+              let resolved = path.resolve(path.dirname(file), resolvedRef);
+              console.log(`📍 Resolved relative path:`, {
+                original: resolvedRef,
+                resolved: resolved,
+                dirname: path.dirname(file),
+              });
+
               if (fs.existsSync(resolved)) {
-                if (!seen.has(path.resolve(resolved))) {
-                  logVerbose(`[REF] Found reference: ${file} -> ${resolved}`);
-                  referenced.add(resolved);
-                  helper([resolved], depth + 1);
-                }
+                nextFiles.push(resolved);
+                console.log(
+                  `✅ Added to nextFiles (exists): ${path.basename(resolved)}`
+                );
               } else {
+                console.log(
+                  `❌ File doesn't exist: ${path.basename(resolved)}`
+                );
                 // Try with common extensions
                 const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
                 for (const ext of exts) {
-                  if (fs.existsSync(resolved + ext)) {
-                    if (!seen.has(path.resolve(resolved + ext))) {
-                      logVerbose(
-                        `[REF] Found reference: ${file} -> ${resolved + ext}`
-                      );
-                      referenced.add(resolved + ext);
-                      helper([resolved + ext], depth + 1);
-                    }
+                  const withExt = resolved + ext;
+                  if (fs.existsSync(withExt)) {
+                    nextFiles.push(withExt);
+                    console.log(
+                      `✅ Added to nextFiles (with extension ${ext}): ${path.basename(
+                        withExt
+                      )}`
+                    );
                     break;
+                  } else {
+                    console.log(
+                      `❌ File with extension ${ext} doesn't exist: ${path.basename(
+                        withExt
+                      )}`
+                    );
                   }
                 }
               }
             } else if (resolvedRef !== ref) {
               // Handle aliased paths (non-relative)
-              const resolved = path.resolve(resolvedRef);
+              let resolved = path.resolve(resolvedRef);
+              console.log(`📍 Resolved aliased path:`, {
+                original: resolvedRef,
+                resolved: resolved,
+              });
+
               if (fs.existsSync(resolved)) {
-                if (!seen.has(path.resolve(resolved))) {
-                  logVerbose(
-                    `[REF] Found aliased reference: ${file} -> ${ref} -> ${resolved}`
-                  );
-                  referenced.add(resolved);
-                  helper([resolved], depth + 1);
-                }
+                nextFiles.push(resolved);
+                console.log(
+                  `✅ Added to nextFiles (aliased, exists): ${path.basename(
+                    resolved
+                  )}`
+                );
               } else {
+                console.log(
+                  `❌ Aliased file doesn't exist: ${path.basename(resolved)}`
+                );
                 // Try with common extensions
                 const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
                 for (const ext of exts) {
-                  if (fs.existsSync(resolved + ext)) {
-                    if (!seen.has(path.resolve(resolved + ext))) {
-                      logVerbose(
-                        `[REF] Found aliased reference: ${file} -> ${ref} -> ${
-                          resolved + ext
-                        }`
-                      );
-                      referenced.add(resolved + ext);
-                      helper([resolved + ext], depth + 1);
-                    }
+                  const withExt = resolved + ext;
+                  if (fs.existsSync(withExt)) {
+                    nextFiles.push(withExt);
+                    console.log(
+                      `✅ Added to nextFiles (aliased, with extension ${ext}): ${path.basename(
+                        withExt
+                      )}`
+                    );
                     break;
+                  } else {
+                    console.log(
+                      `❌ Aliased file with extension ${ext} doesn't exist: ${path.basename(
+                        withExt
+                      )}`
+                    );
+                  }
+                }
+              }
+            } else {
+              // Handle non-relative, non-aliased paths (like Ruby require_relative)
+              console.log(`⚠️  No path resolution needed for: ${resolvedRef}`);
+              // Try to resolve as relative path from the current file's directory
+              let resolved = path.resolve(path.dirname(file), resolvedRef);
+              console.log(`📍 Attempting relative resolution:`, {
+                original: resolvedRef,
+                resolved: resolved,
+                dirname: path.dirname(file),
+              });
+
+              if (fs.existsSync(resolved)) {
+                nextFiles.push(resolved);
+                console.log(
+                  `✅ Added to nextFiles (relative resolution, exists): ${path.basename(
+                    resolved
+                  )}`
+                );
+              } else {
+                console.log(
+                  `❌ File doesn't exist with relative resolution: ${path.basename(
+                    resolved
+                  )}`
+                );
+                // Try with common extensions
+                const exts = [".js", ".ts", ".tsx", ".jsx", ".rb", ".json"];
+                for (const ext of exts) {
+                  const withExt = resolved + ext;
+                  if (fs.existsSync(withExt)) {
+                    nextFiles.push(withExt);
+                    console.log(
+                      `✅ Added to nextFiles (relative resolution, with extension ${ext}): ${path.basename(
+                        withExt
+                      )}`
+                    );
+                    break;
+                  } else {
+                    console.log(
+                      `❌ File with extension ${ext} doesn't exist with relative resolution: ${path.basename(
+                        withExt
+                      )}`
+                    );
                   }
                 }
               }
             }
+
+            console.log(
+              `📋 nextFiles for this reference:`,
+              nextFiles.map((f) => path.basename(f))
+            );
+
+            // Add referenced files to the result immediately if they are not original files
+            for (const nextFile of nextFiles) {
+              const absNextFile = path.resolve(nextFile);
+              const isNextFileOriginal = originalFiles.has(absNextFile);
+              console.log(`🔍 Checking if should add immediately:`, {
+                file: path.basename(nextFile),
+                absFile: path.basename(absNextFile),
+                isOriginal: isNextFileOriginal,
+                willAdd: true, // Always add files discovered through references
+              });
+
+              // Always add files discovered through references
+              referenced.add(absNextFile);
+              console.log(
+                `✅ Added referenced file ${path.basename(
+                  absNextFile
+                )} to result immediately`
+              );
+            }
+
+            // Recurse for all found nextFiles
+            for (const nextFile of nextFiles) {
+              const absNextFile = path.resolve(nextFile);
+              const alreadySeen = seen.has(absNextFile);
+              console.log(`🔄 Checking recursion for:`, {
+                file: path.basename(nextFile),
+                absFile: path.basename(absNextFile),
+                alreadySeen,
+                willRecurse: !alreadySeen,
+              });
+
+              if (!alreadySeen) {
+                console.log(
+                  `🔄 Recursing to: ${path.basename(nextFile)} at depth ${
+                    depth + 1
+                  }`
+                );
+                helper([nextFile], depth + 1);
+              } else {
+                console.log(
+                  `⏭️  Skipping recursion to ${path.basename(
+                    nextFile
+                  )} (already seen)`
+                );
+              }
+            }
+          }
+          if (regexMatches > 0) {
+            console.log(
+              `📊 Regex ${regex.source} found ${regexMatches} matches`
+            );
           }
         }
+        console.log(
+          `📊 Total references found in ${path.basename(
+            file
+          )}: ${totalReferencesFound}`
+        );
       } catch (err: any) {
+        console.error(
+          `❌ Error processing ${path.basename(file)}:`,
+          err.message
+        );
         warnings.push(`Failed to process reference: ${file} (${err.message})`);
       }
     }
   }
+
+  console.log(
+    `🚀 Starting helper with initial files:`,
+    files.map((f) => path.basename(f))
+  );
   helper(files, 1);
+
+  const resultArray = Array.from(referenced);
+  console.log(`📊 Final result:`, {
+    count: resultArray.length,
+    files: resultArray.map((f) => path.basename(f)),
+    fullPaths: resultArray,
+  });
+
   return referenced;
 }
 

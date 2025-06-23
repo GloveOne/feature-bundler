@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs-extra";
 
 // Import the resolveAlias function from the main script
 // We'll need to export it from bundleFeature.ts for this to work
