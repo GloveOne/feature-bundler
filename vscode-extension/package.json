@@ -82,15 +82,6 @@
         }
       ]
     },
-    "views": {
-      "explorer": [
-        {
-          "id": "feature-bundler.dependenciesView",
-          "name": "Feature Dependencies",
-          "when": "feature-bundler.hasDependencies"
-        }
-      ]
-    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -163,17 +154,11 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
     "@types/node": "^20.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
     "typescript": "^5.0.0",
     "@vscode/vsce": "^2.15.0"
   },
@@ -191,5 +176,5 @@
   },
   "homepage": "https://github.com/your-username/feature-bundler#readme",
   "license": "ISC",
-  "icon": "resources/icon.png"
+  "icon": "resources/icon.svg"
 }

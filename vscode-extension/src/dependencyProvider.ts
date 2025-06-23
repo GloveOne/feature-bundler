@@ -14,6 +14,10 @@ export class DependencyProvider
   private dependencies: string[] = [];
 
   updateDependencies(dependencies: string[]) {
+    console.log("📋 DependencyProvider.updateDependencies called with:", {
+      count: dependencies.length,
+      dependencies: dependencies.map((f) => path.basename(f)),
+    });
     this.dependencies = dependencies;
     this._onDidChangeTreeData.fire();
   }

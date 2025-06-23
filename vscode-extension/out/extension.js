@@ -37,6 +37,7 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs-extra"));
 const glob_1 = require("glob");
 const featureBundler_1 = require("./featureBundler");
 const dependencyProvider_1 = require("./dependencyProvider");
@@ -51,6 +52,9 @@ function activate(context) {
     featureBundler = new featureBundler_1.FeatureBundler();
     dependencyProvider = new dependencyProvider_1.DependencyProvider();
     outputProvider = new outputProvider_1.OutputProvider();
+    // Initialize context keys
+    vscode.commands.executeCommand("setContext", "feature-bundler.hasDependencies", false);
+    vscode.commands.executeCommand("setContext", "feature-bundler.hasOutput", false);
     // Register tree data providers
     const dependencyTreeProvider = vscode.window.registerTreeDataProvider("feature-bundler.dependenciesView", dependencyProvider);
     const outputTreeProvider = vscode.window.registerTreeDataProvider("feature-bundler.outputView", outputProvider);
@@ -58,7 +62,7 @@ function activate(context) {
     watchModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     watchModeStatusBarItem.text = "$(eye) Feature Bundler";
     watchModeStatusBarItem.tooltip =
-        "Feature Bundler - Click to toggle watch mode";
+        "Feature Bundler - Click to enable watch mode";
     watchModeStatusBarItem.command = "feature-bundler.watchMode";
     // Register commands
     const bundleFilesCommand = vscode.commands.registerCommand("feature-bundler.bundleFiles", async () => {
@@ -79,8 +83,15 @@ function activate(context) {
     const watchModeCommand = vscode.commands.registerCommand("feature-bundler.watchMode", async () => {
         await toggleWatchMode();
     });
+    // Add missing command handlers
+    const handleOutputActionCommand = vscode.commands.registerCommand("feature-bundler.handleOutputAction", async (action) => {
+        await handleOutputAction(action);
+    });
+    const showOutputCommand = vscode.commands.registerCommand("feature-bundler.showOutput", async (output) => {
+        await showOutput(output);
+    });
     // Register context subscriptions
-    context.subscriptions.push(bundleFilesCommand, bundleSelectionCommand, bundleWorkspaceCommand, showDependenciesCommand, exportToClipboardCommand, watchModeCommand, dependencyTreeProvider, outputTreeProvider, watchModeStatusBarItem);
+    context.subscriptions.push(bundleFilesCommand, bundleSelectionCommand, bundleWorkspaceCommand, showDependenciesCommand, exportToClipboardCommand, watchModeCommand, handleOutputActionCommand, showOutputCommand, dependencyTreeProvider, outputTreeProvider, watchModeStatusBarItem);
     // Show status bar item
     watchModeStatusBarItem.show();
 }
@@ -169,9 +180,26 @@ async function performBundling(filePaths) {
                 aliases,
             });
             progress.report({ message: "Generating output...", increment: 50 });
+            // Debug output
+            console.log("🔍 Bundling result:", {
+                filesProcessed: result.filesProcessed,
+                dependenciesCount: result.dependencies.length,
+                dependencies: result.dependencies.map((f) => path.basename(f)),
+                outputLength: result.output.length,
+            });
             // Update providers
             dependencyProvider.updateDependencies(result.dependencies);
             outputProvider.updateOutput(result.output, outputFormat);
+            // Update context keys to show views
+            const hasDependencies = result.dependencies.length > 0;
+            const hasOutput = result.output.length > 0;
+            console.log("🔧 Setting context keys:", {
+                hasDependencies,
+                hasOutput,
+                dependenciesCount: result.dependencies.length,
+            });
+            await vscode.commands.executeCommand("setContext", "feature-bundler.hasDependencies", hasDependencies);
+            await vscode.commands.executeCommand("setContext", "feature-bundler.hasOutput", hasOutput);
             progress.report({ message: "Complete!", increment: 100 });
             // Show success message
             vscode.window.showInformationMessage(`Successfully bundled ${result.filesProcessed} files with ${result.dependencies.length} dependencies`);
@@ -240,6 +268,53 @@ async function toggleWatchMode() {
     }
     catch (error) {
         vscode.window.showErrorMessage(`Failed to toggle watch mode: ${error}`);
+    }
+}
+async function handleOutputAction(action) {
+    try {
+        const output = outputProvider.getCurrentOutput();
+        if (!output) {
+            vscode.window.showWarningMessage("No output available");
+            return;
+        }
+        switch (action) {
+            case "copy":
+                await vscode.env.clipboard.writeText(output);
+                vscode.window.showInformationMessage("Output copied to clipboard!");
+                break;
+            case "open":
+                await showOutput(output);
+                break;
+            case "save":
+                const uri = await vscode.window.showSaveDialog({
+                    filters: {
+                        "Text files": ["txt"],
+                        "All files": ["*"],
+                    },
+                });
+                if (uri) {
+                    await fs.writeFile(uri.fsPath, output, "utf8");
+                    vscode.window.showInformationMessage(`Output saved to ${uri.fsPath}`);
+                }
+                break;
+            default:
+                vscode.window.showWarningMessage(`Unknown action: ${action}`);
+        }
+    }
+    catch (error) {
+        vscode.window.showErrorMessage(`Failed to handle output action: ${error}`);
+    }
+}
+async function showOutput(output) {
+    try {
+        const document = await vscode.workspace.openTextDocument({
+            content: output,
+            language: "plaintext",
+        });
+        await vscode.window.showTextDocument(document);
+    }
+    catch (error) {
+        vscode.window.showErrorMessage(`Failed to show output: ${error}`);
     }
 }
 function deactivate() {

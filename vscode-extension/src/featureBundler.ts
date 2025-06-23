@@ -105,6 +105,7 @@ export class FeatureBundler {
   ): Promise<string[]> {
     const referenced = new Set<string>();
     const seen = new Set<string>();
+    const originalFiles = new Set(files.map((f) => path.resolve(f)));
 
     const referenceRegexes = [
       /import\s+.*?from\s+['"](.+?)['"]/g,
@@ -121,7 +122,10 @@ export class FeatureBundler {
           if (!fs.existsSync(file) || seen.has(absFile)) continue;
 
           seen.add(absFile);
-          if (depth > 1) {
+
+          // Add to referenced set if it's not an original file, or if it's an original file but we're at depth > 1
+          const isOriginalFile = originalFiles.has(absFile);
+          if (depth > 1 || !isOriginalFile) {
             referenced.add(absFile);
           }
 
@@ -184,9 +188,13 @@ export class FeatureBundler {
                 }
               }
 
-              // Add to referenced set
+              // Add referenced files to the result immediately
               for (const nextFile of nextFiles) {
-                referenced.add(path.resolve(nextFile));
+                const absNextFile = path.resolve(nextFile);
+                const isNextFileOriginal = originalFiles.has(absNextFile);
+                if (depth > 1 || !isNextFileOriginal) {
+                  referenced.add(absNextFile);
+                }
               }
 
               // Recurse

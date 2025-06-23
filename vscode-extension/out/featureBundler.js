@@ -104,6 +104,7 @@ class FeatureBundler {
     async findDependencies(files, maxDepth, aliases) {
         const referenced = new Set();
         const seen = new Set();
+        const originalFiles = new Set(files.map((f) => path.resolve(f)));
         const referenceRegexes = [
             /import\s+.*?from\s+['"](.+?)['"]/g,
             /require\(['"](.+?)['"]\)/g,
@@ -118,7 +119,9 @@ class FeatureBundler {
                     if (!fs.existsSync(file) || seen.has(absFile))
                         continue;
                     seen.add(absFile);
-                    if (depth > 1) {
+                    // Add to referenced set if it's not an original file, or if it's an original file but we're at depth > 1
+                    const isOriginalFile = originalFiles.has(absFile);
+                    if (depth > 1 || !isOriginalFile) {
                         referenced.add(absFile);
                     }
                     const content = await fs.readFile(file, "utf8");
@@ -181,9 +184,13 @@ class FeatureBundler {
                                     }
                                 }
                             }
-                            // Add to referenced set
+                            // Add referenced files to the result immediately
                             for (const nextFile of nextFiles) {
-                                referenced.add(path.resolve(nextFile));
+                                const absNextFile = path.resolve(nextFile);
+                                const isNextFileOriginal = originalFiles.has(absNextFile);
+                                if (depth > 1 || !isNextFileOriginal) {
+                                    referenced.add(absNextFile);
+                                }
                             }
                             // Recurse
                             for (const nextFile of nextFiles) {
