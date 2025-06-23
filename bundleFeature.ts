@@ -17,13 +17,16 @@ if (fs.existsSync(CONFIG_FILE)) {
   }
 }
 
-// Parse CLI arguments for --depth
+// Parse CLI arguments for --depth and --dry-run
 let depthArg = configDepth || 1;
+let dryRun = false;
 const fileArgs: string[] = configFiles.slice();
 process.argv.slice(2).forEach((arg) => {
   if (arg.startsWith("--depth=")) {
     const val = parseInt(arg.split("=")[1], 10);
     if (!isNaN(val) && val > 0) depthArg = val;
+  } else if (arg === "--dry-run") {
+    dryRun = true;
   } else {
     fileArgs.push(arg);
   }
@@ -31,7 +34,7 @@ process.argv.slice(2).forEach((arg) => {
 
 if (fileArgs.length === 0) {
   console.error(
-    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ... <glob1> <glob2> ...\n" +
+    "Usage: ts-node bundleFeature.ts [--depth=N] [--dry-run] <file1> <file2> ... <glob1> <glob2> ...\n" +
       "       or: provide files in bundleFeature.config.json\n" +
       "Examples:\n" +
       "  ts-node bundleFeature.ts src/**/*.ts\n" +
@@ -234,6 +237,26 @@ async function main() {
 
     console.log(`Found ${expandedFiles.length} files to process:`);
     expandedFiles.forEach((file) => console.log(`  - ${file}`));
+
+    if (dryRun) {
+      // Find all referenced files recursively
+      const seenFiles = new Set<string>(
+        expandedFiles.map((f) => path.resolve(f))
+      );
+      const referencedFiles = findReferences(
+        expandedFiles,
+        depthArg,
+        seenFiles
+      );
+      const referencedList = Array.from(referencedFiles);
+      if (referencedList.length > 0) {
+        console.log("\nReferenced files to copy:");
+        referencedList.forEach((file) => console.log(`  - ${file}`));
+      }
+      console.log(`\nWould write concatenated output to: ${OUTPUT_FILE}`);
+      console.log("(No files or directories were actually copied or written.)");
+      return;
+    }
 
     await fs.ensureDir(CONTEXT_DIR);
     await Promise.all(
