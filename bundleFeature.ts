@@ -57,8 +57,63 @@ function logVerbose(msg: string) {
 let depthArg = configDepth || 1;
 let dryRun = false;
 const fileArgs: string[] = configFiles.slice();
+
+// Add help and version handling
+const showHelp = () => {
+  console.log(`
+Feature Bundler - Bundle related files from your codebase
+
+USAGE:
+  ts-node bundleFeature.ts [OPTIONS] <files...>
+
+OPTIONS:
+  --help, -h              Show this help message
+  --version, -v           Show version information
+  --depth=N               Set maximum dependency depth (default: 1)
+  --dry-run               Show what would be bundled without writing
+  --verbose               Enable verbose logging
+  --no-cache              Disable caching
+  --output=FILE           Specify output file (default: all_feature_files.txt)
+
+EXAMPLES:
+  # Bundle a single file
+  ts-node bundleFeature.ts src/components/Button.tsx
+
+  # Bundle multiple files with glob patterns
+  ts-node bundleFeature.ts src/**/*.ts lib/**/*.js
+
+  # Bundle with depth control
+  ts-node bundleFeature.ts --depth=3 src/main.ts
+
+  # Dry run to see what would be bundled
+  ts-node bundleFeature.ts --dry-run src/**/*.tsx
+
+  # Use configuration file
+  # Create bundleFeature.config.json with your file patterns
+  ts-node bundleFeature.ts
+
+CONFIGURATION:
+  Create bundleFeature.config.json to define:
+  - files: Array of file patterns to bundle
+  - depth: Maximum dependency depth
+  - aliases: Path aliases for import resolution
+
+For more information, visit: https://github.com/your-username/feature-bundler
+`);
+  process.exit(0);
+};
+
+const showVersion = () => {
+  console.log("Feature Bundler v1.0.0");
+  process.exit(0);
+};
+
 process.argv.slice(2).forEach((arg) => {
-  if (arg.startsWith("--depth=")) {
+  if (arg === "--help" || arg === "-h") {
+    showHelp();
+  } else if (arg === "--version" || arg === "-V") {
+    showVersion();
+  } else if (arg.startsWith("--depth=")) {
     const val = parseInt(arg.split("=")[1], 10);
     if (!isNaN(val) && val > 0) depthArg = val;
   } else if (arg === "--dry-run") {
