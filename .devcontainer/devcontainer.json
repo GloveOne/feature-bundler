@@ -1,0 +1,10 @@
+{
+  "name": "Feature Bundler Dev",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22",
+  "features": {},
+  "settings": {},
+  "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"],
+  "mounts": [
+    "source=/home/gnavarro/Development,target=/Development,type=bind"
+  ]
+}

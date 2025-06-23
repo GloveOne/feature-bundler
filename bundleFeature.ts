@@ -7,6 +7,12 @@ const CONFIG_FILE = "bundleFeature.config.json";
 let configFiles: string[] = [];
 let configDepth: number | undefined = undefined;
 let configAliases: Record<string, string> = {};
+
+// Add this function to expand variables in strings
+function expandVars(str: string, vars: Record<string, string>): string {
+  return str.replace(/\$\{([^}]+)\}/g, (_, name) => vars[name] || "");
+}
+
 if (fs.existsSync(CONFIG_FILE)) {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
@@ -16,6 +22,12 @@ if (fs.existsSync(CONFIG_FILE)) {
     if (config.aliases && typeof config.aliases === "object") {
       configAliases = config.aliases;
     }
+    // Expand aliases first
+    for (const [key, value] of Object.entries(configAliases)) {
+      configAliases[key] = expandVars(value, configAliases);
+    }
+    // Expand files
+    configFiles = configFiles.map((f) => expandVars(f, configAliases));
   } catch (err: any) {
     console.warn(`Warning: Failed to parse ${CONFIG_FILE}: ${err.message}`);
   }
@@ -216,9 +228,13 @@ const referenceRegexes = [
 ];
 
 // Resolve path aliases
-function resolveAlias(ref: string, baseFile: string): string {
+export function resolveAlias(
+  ref: string,
+  baseFile: string,
+  aliases: Record<string, string> = configAliases
+): string {
   // Check if the reference starts with any alias
-  for (const [alias, aliasPath] of Object.entries(configAliases)) {
+  for (const [alias, aliasPath] of Object.entries(aliases)) {
     if (ref.startsWith(alias + "/") || ref === alias) {
       const relativePath = ref.substring(alias.length);
       const resolvedAliasPath = path.resolve(aliasPath);

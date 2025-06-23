@@ -1,0 +1,45 @@
+{
+  "files": {
+    "/Development/netvacinas/app/services/gemini_api_service.rb": {
+      "mtimeMs": 1750679471470.6455,
+      "size": 25033
+    },
+    "/Development/netvacinas/app/graphql/graph/types/mutations/process_base64_file.rb": {
+      "mtimeMs": 1750199939774.05,
+      "size": 8815
+    },
+    "/Development/netvacinas/app/graphql/graph/types/process_base64_file_input_type.rb": {
+      "mtimeMs": 1749068710032.3457,
+      "size": 836
+    },
+    "/Development/netvacinas/app/graphql/graph/types/mutations/save_extracted_vaccine_applications.rb": {
+      "mtimeMs": 1750195112685.6604,
+      "size": 18407
+    },
+    "/Development/netvacinas/spec/graphql/mutations/save_extracted_vaccine_applications_spec.rb": {
+      "mtimeMs": 1750190063299.593,
+      "size": 33685
+    },
+    "/Development/netvacinas-frontend/src/components/UploadShots/index.tsx": {
+      "mtimeMs": 1749235485853.0215,
+      "size": 957
+    },
+    "/Development/netvacinas-frontend/src/components/UploadShots/form.tsx": {
+      "mtimeMs": 1750681944547.3743,
+      "size": 28426
+    },
+    "/Development/netvacinas-frontend/src/components/UploadShots/types.ts": {
+      "mtimeMs": 1750161975166.9424,
+      "size": 3935
+    },
+    "/Development/netvacinas-frontend/src/components/UploadShots/useUploadShots.ts": {
+      "mtimeMs": 1749235485853.0215,
+      "size": 7213
+    },
+    "/Development/netvacinas-frontend/src/components/UploadShots/EditableApplicationItem.tsx": {
+      "mtimeMs": 1750166545156.2358,
+      "size": 20975
+    }
+  },
+  "inputHash": "4d8394f0c18e78683e40787c8371f6c99b26bc12"
+}
