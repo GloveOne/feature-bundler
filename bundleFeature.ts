@@ -28,30 +28,32 @@ const projectRoot = process.cwd();
 // Map from context file absolute path to original relative path
 const contextToOriginal: Record<string, string> = {};
 
-// Helper to copy a file and record its mapping
-function copyFileWithMap(src: string, destDir: string) {
+// Async helper to copy a file and record its mapping
+async function copyFileWithMap(src: string, destDir: string) {
   const dest = path.join(destDir, path.basename(src));
-  fs.copyFileSync(src, dest);
+  await fs.copy(src, dest);
   const relSrc = path.relative(projectRoot, src);
   contextToOriginal[path.resolve(dest)] = relSrc;
 }
 
-// Helper to copy a directory recursively and record mappings
-function copyDirWithMap(srcDir: string, destDir: string) {
-  fs.ensureDirSync(destDir);
-  const entries = fs.readdirSync(srcDir);
-  entries.forEach((entry) => {
-    const srcPath = path.join(srcDir, entry);
-    const destPath = path.join(destDir, entry);
-    const stat = fs.statSync(srcPath);
-    if (stat.isDirectory()) {
-      copyDirWithMap(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-      const relSrc = path.relative(projectRoot, srcPath);
-      contextToOriginal[path.resolve(destPath)] = relSrc;
-    }
-  });
+// Async helper to copy a directory recursively and record mappings
+async function copyDirWithMap(srcDir: string, destDir: string) {
+  await fs.ensureDir(destDir);
+  const entries = await fs.readdir(srcDir);
+  await Promise.all(
+    entries.map(async (entry) => {
+      const srcPath = path.join(srcDir, entry);
+      const destPath = path.join(destDir, entry);
+      const stat = await fs.stat(srcPath);
+      if (stat.isDirectory()) {
+        await copyDirWithMap(srcPath, destPath);
+      } else {
+        await fs.copy(srcPath, destPath);
+        const relSrc = path.relative(projectRoot, srcPath);
+        contextToOriginal[path.resolve(destPath)] = relSrc;
+      }
+    })
+  );
 }
 
 // Reference regexes
@@ -107,74 +109,85 @@ function findReferences(
   return referenced;
 }
 
-// 1. Copy selected files
-fs.ensureDirSync(CONTEXT_DIR);
-fileArgs.forEach((file) => {
-  copyFileWithMap(file, CONTEXT_DIR);
-});
-
-// 2. Find all referenced files recursively
-const seenFiles = new Set<string>(fileArgs.map((f) => path.resolve(f)));
-const referencedFiles = findReferences(fileArgs, depthArg, seenFiles);
-
-// 3. Copy referenced files/directories recursively
-referencedFiles.forEach((file) => {
-  if (fs.existsSync(file)) {
-    const stats = fs.statSync(file);
-    if (stats.isFile()) {
-      copyFileWithMap(file, CONTEXT_DIR);
-    } else if (stats.isDirectory()) {
-      const destDir = path.join(CONTEXT_DIR, path.basename(file));
-      copyDirWithMap(file, destDir);
-    }
-  }
-});
-
-// 4. Recursively collect all files in CONTEXT_DIR
-function getAllFiles(dir: string): string[] {
+// Recursively collect all files in CONTEXT_DIR
+async function getAllFiles(dir: string): Promise<string[]> {
   let results: string[] = [];
-  const list = fs.readdirSync(dir);
-  list.forEach((file) => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat && stat.isDirectory()) {
-      results = results.concat(getAllFiles(filePath));
-    } else {
-      results.push(filePath);
-    }
-  });
+  const list = await fs.readdir(dir);
+  await Promise.all(
+    list.map(async (file) => {
+      const filePath = path.join(dir, file);
+      const stat = await fs.stat(filePath);
+      if (stat && stat.isDirectory()) {
+        const subFiles = await getAllFiles(filePath);
+        results = results.concat(subFiles);
+      } else {
+        results.push(filePath);
+      }
+    })
+  );
   return results;
 }
 
-const allFiles = getAllFiles(CONTEXT_DIR);
-// Sort files by their original folder and filename
-const allFilesWithOriginal = allFiles.map((file) => {
-  const original = contextToOriginal[path.resolve(file)] || file;
-  return { file, original };
-});
-allFilesWithOriginal.sort((a, b) => {
-  const aDir = path.dirname(a.original);
-  const bDir = path.dirname(b.original);
-  if (aDir === bDir) {
-    return a.original.localeCompare(b.original);
-  }
-  return aDir.localeCompare(bDir);
-});
+// Main async logic
+async function main() {
+  await fs.ensureDir(CONTEXT_DIR);
+  await Promise.all(fileArgs.map((file) => copyFileWithMap(file, CONTEXT_DIR)));
 
-let lastDir = "";
-const output = allFilesWithOriginal
-  .map(({ file, original }) => {
-    const dir = path.dirname(original);
-    let section = "";
-    if (dir !== lastDir) {
-      section = `\n===== ${dir}/ =====\n`;
-      lastDir = dir;
+  // Find all referenced files recursively
+  const seenFiles = new Set<string>(fileArgs.map((f) => path.resolve(f)));
+  const referencedFiles = findReferences(fileArgs, depthArg, seenFiles);
+
+  // Copy referenced files/directories recursively in parallel
+  await Promise.all(
+    Array.from(referencedFiles).map(async (file) => {
+      if (await fs.pathExists(file)) {
+        const stats = await fs.stat(file);
+        if (stats.isFile()) {
+          await copyFileWithMap(file, CONTEXT_DIR);
+        } else if (stats.isDirectory()) {
+          const destDir = path.join(CONTEXT_DIR, path.basename(file));
+          await copyDirWithMap(file, destDir);
+        }
+      }
+    })
+  );
+
+  // Recursively collect all files in CONTEXT_DIR
+  const allFiles = await getAllFiles(CONTEXT_DIR);
+  // Sort files by their original folder and filename
+  const allFilesWithOriginal = allFiles.map((file) => {
+    const original = contextToOriginal[path.resolve(file)] || file;
+    return { file, original };
+  });
+  allFilesWithOriginal.sort((a, b) => {
+    const aDir = path.dirname(a.original);
+    const bDir = path.dirname(b.original);
+    if (aDir === bDir) {
+      return a.original.localeCompare(b.original);
     }
-    const content = fs.readFileSync(file, "utf8");
-    return `${section}\n==================== ${original} ====================\n\n${content}`;
-  })
-  .join("\n");
+    return aDir.localeCompare(bDir);
+  });
 
-fs.writeFileSync(OUTPUT_FILE, output);
+  let lastDir = "";
+  const outputArr = await Promise.all(
+    allFilesWithOriginal.map(async ({ file, original }) => {
+      const dir = path.dirname(original);
+      let section = "";
+      if (dir !== lastDir) {
+        section = `\n===== ${dir}/ =====\n`;
+        lastDir = dir;
+      }
+      const content = await fs.readFile(file, "utf8");
+      return `${section}\n==================== ${original} ====================\n\n${content}`;
+    })
+  );
 
-console.log(`Done! Output written to ${OUTPUT_FILE}`);
+  const output = outputArr.join("\n");
+  await fs.writeFile(OUTPUT_FILE, output);
+  console.log(`Done! Output written to ${OUTPUT_FILE}`);
+}
+
+main().catch((err) => {
+  console.error("Error:", err);
+  process.exit(1);
+});
