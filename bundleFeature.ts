@@ -2,9 +2,24 @@ import * as fs from "fs-extra";
 import * as path from "path";
 import glob from "glob";
 
+// Config file support
+const CONFIG_FILE = "bundleFeature.config.json";
+let configFiles: string[] = [];
+let configDepth: number | undefined = undefined;
+if (fs.existsSync(CONFIG_FILE)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    if (Array.isArray(config.files)) configFiles = config.files;
+    if (typeof config.depth === "number" && config.depth > 0)
+      configDepth = config.depth;
+  } catch (err: any) {
+    console.warn(`Warning: Failed to parse ${CONFIG_FILE}: ${err.message}`);
+  }
+}
+
 // Parse CLI arguments for --depth
-let depthArg = 1;
-const fileArgs: string[] = [];
+let depthArg = configDepth || 1;
+const fileArgs: string[] = configFiles.slice();
 process.argv.slice(2).forEach((arg) => {
   if (arg.startsWith("--depth=")) {
     const val = parseInt(arg.split("=")[1], 10);
@@ -16,7 +31,7 @@ process.argv.slice(2).forEach((arg) => {
 
 if (fileArgs.length === 0) {
   console.error(
-    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ..."
+    "Usage: ts-node bundleFeature.ts [--depth=N] <file1> <file2> ...\n       or: provide files in bundleFeature.config.json"
   );
   process.exit(1);
 }
