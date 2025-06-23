@@ -147,11 +147,31 @@ function getAllFiles(dir: string): string[] {
 }
 
 const allFiles = getAllFiles(CONTEXT_DIR);
-const output = allFiles
-  .map((file) => {
+// Sort files by their original folder and filename
+const allFilesWithOriginal = allFiles.map((file) => {
+  const original = contextToOriginal[path.resolve(file)] || file;
+  return { file, original };
+});
+allFilesWithOriginal.sort((a, b) => {
+  const aDir = path.dirname(a.original);
+  const bDir = path.dirname(b.original);
+  if (aDir === bDir) {
+    return a.original.localeCompare(b.original);
+  }
+  return aDir.localeCompare(bDir);
+});
+
+let lastDir = "";
+const output = allFilesWithOriginal
+  .map(({ file, original }) => {
+    const dir = path.dirname(original);
+    let section = "";
+    if (dir !== lastDir) {
+      section = `\n===== ${dir}/ =====\n`;
+      lastDir = dir;
+    }
     const content = fs.readFileSync(file, "utf8");
-    const original = contextToOriginal[path.resolve(file)] || file;
-    return `\n==================== ${original} ====================\n\n${content}`;
+    return `${section}\n==================== ${original} ====================\n\n${content}`;
   })
   .join("\n");
 
