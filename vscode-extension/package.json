@@ -1,0 +1,195 @@
+{
+  "name": "feature-bundler",
+  "displayName": "Feature Bundler",
+  "description": "Bundle related files from your codebase into a single context file. Perfect for AI code analysis and documentation generation.",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Developer Tools",
+    "Documentation"
+  ],
+  "keywords": [
+    "bundle",
+    "context",
+    "ai",
+    "documentation",
+    "dependencies",
+    "code-analysis"
+  ],
+  "activationEvents": [
+    "onCommand:feature-bundler.bundleFiles",
+    "onCommand:feature-bundler.bundleSelection",
+    "onCommand:feature-bundler.bundleWorkspace",
+    "onCommand:feature-bundler.showDependencies",
+    "onCommand:feature-bundler.exportToClipboard",
+    "onCommand:feature-bundler.watchMode",
+    "onView:feature-bundler.dependenciesView"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "feature-bundler.bundleFiles",
+        "title": "Feature Bundler: Bundle Files",
+        "category": "Feature Bundler"
+      },
+      {
+        "command": "feature-bundler.bundleSelection",
+        "title": "Feature Bundler: Bundle Selected Files",
+        "category": "Feature Bundler"
+      },
+      {
+        "command": "feature-bundler.bundleWorkspace",
+        "title": "Feature Bundler: Bundle Workspace",
+        "category": "Feature Bundler"
+      },
+      {
+        "command": "feature-bundler.showDependencies",
+        "title": "Feature Bundler: Show Dependencies",
+        "category": "Feature Bundler"
+      },
+      {
+        "command": "feature-bundler.exportToClipboard",
+        "title": "Feature Bundler: Export to Clipboard",
+        "category": "Feature Bundler"
+      },
+      {
+        "command": "feature-bundler.watchMode",
+        "title": "Feature Bundler: Toggle Watch Mode",
+        "category": "Feature Bundler"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "feature-bundler.bundleSelection",
+          "group": "navigation",
+          "when": "explorerResourceIsFile"
+        },
+        {
+          "command": "feature-bundler.bundleSelection",
+          "group": "navigation",
+          "when": "explorerResourceIsFolder"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "feature-bundler.bundleSelection",
+          "group": "navigation"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "feature-bundler.dependenciesView",
+          "name": "Feature Dependencies",
+          "when": "feature-bundler.hasDependencies"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "feature-bundler",
+          "title": "Feature Bundler",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "feature-bundler": [
+        {
+          "id": "feature-bundler.dependenciesView",
+          "name": "Dependencies",
+          "when": "feature-bundler.hasDependencies"
+        },
+        {
+          "id": "feature-bundler.outputView",
+          "name": "Bundled Output",
+          "when": "feature-bundler.hasOutput"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Feature Bundler",
+      "properties": {
+        "feature-bundler.depth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum depth for dependency resolution"
+        },
+        "feature-bundler.outputFormat": {
+          "type": "string",
+          "enum": [
+            "text",
+            "json",
+            "markdown"
+          ],
+          "default": "text",
+          "description": "Output format for bundled files"
+        },
+        "feature-bundler.includeNodeModules": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include node_modules dependencies"
+        },
+        "feature-bundler.aliases": {
+          "type": "object",
+          "default": {},
+          "description": "Path aliases for import resolution"
+        },
+        "feature-bundler.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.test.*",
+            "**/*.spec.*",
+            "**/node_modules/**"
+          ],
+          "description": "Patterns to exclude from bundling"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.15.0"
+  },
+  "dependencies": {
+    "fs-extra": "^11.3.0",
+    "glob": "^11.0.3"
+  },
+  "publisher": "your-publisher-name",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/feature-bundler.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/feature-bundler/issues"
+  },
+  "homepage": "https://github.com/your-username/feature-bundler#readme",
+  "license": "ISC",
+  "icon": "resources/icon.png"
+}
