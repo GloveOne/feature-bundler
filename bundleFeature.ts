@@ -47,6 +47,7 @@ if (fs.existsSync(CONFIG_FILE)) {
 }
 
 let verbose = false;
+let useCache = true;
 
 function logVerbose(msg: string) {
   if (verbose) console.log(msg);
@@ -191,8 +192,6 @@ const copiedFiles = new Set<string>();
 const warnings: string[] = [];
 
 const CACHE_FILE = ".bundleFeature.cache.json";
-
-let useCache = true;
 
 interface CacheEntry {
   mtimeMs: number;
