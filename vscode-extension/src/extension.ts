@@ -6,6 +6,12 @@ import { FeatureBundler } from "./featureBundler";
 import { DependencyProvider } from "./dependencyProvider";
 import { OutputProvider } from "./outputProvider";
 
+// Centralized error handler
+function handleError(error: any, context: string) {
+  console.error(`Error in ${context}:`, error);
+  vscode.window.showErrorMessage(`${context} failed: ${error.message}`);
+}
+
 let featureBundler: FeatureBundler;
 let dependencyProvider: DependencyProvider;
 let outputProvider: OutputProvider;
@@ -98,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Add missing command handlers
   const handleOutputActionCommand = vscode.commands.registerCommand(
     "feature-bundler.handleOutputAction",
-    async (action: string) => {
+    async (action: "copy" | "open" | "save") => {
       await handleOutputAction(action);
     }
   );
@@ -143,7 +149,7 @@ async function bundleFiles() {
       await performBundling(filePaths);
     }
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to bundle files: ${error}`);
+    handleError(error, "bundleFiles");
   }
 }
 
@@ -162,13 +168,29 @@ async function bundleSelection(uri?: vscode.Uri) {
       }
     }
 
-    if (filePaths.length > 0) {
-      await performBundling(filePaths);
+    // Validate file paths are within workspace
+    function validateFilePath(filePath: string): boolean {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) return false;
+
+      const resolvedPath = path.resolve(filePath);
+      return resolvedPath.startsWith(workspaceRoot);
+    }
+
+    const validFiles = filePaths.filter(validateFilePath);
+    if (validFiles.length !== filePaths.length) {
+      vscode.window.showWarningMessage(
+        "Some files were excluded for security reasons"
+      );
+    }
+
+    if (validFiles.length > 0) {
+      await performBundling(validFiles);
     } else {
-      vscode.window.showWarningMessage("No files selected for bundling");
+      vscode.window.showWarningMessage("No valid files selected for bundling");
     }
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to bundle selection: ${error}`);
+    handleError(error, "bundleSelection");
   }
 }
 
@@ -183,22 +205,44 @@ async function bundleWorkspace() {
     const config = vscode.workspace.getConfiguration("feature-bundler");
     const excludePatterns = config.get<string[]>("excludePatterns", []);
 
+    // Validate and sanitize glob patterns
+    function validateGlobPattern(pattern: string): boolean {
+      // Check for dangerous patterns that could traverse outside workspace
+      if (pattern.includes("..") || pattern.includes("**/..")) {
+        return false;
+      }
+      // Check for absolute paths that could access system files
+      if (pattern.startsWith("/") || pattern.startsWith("\\")) {
+        return false;
+      }
+      return true;
+    }
+
+    const validExcludePatterns = excludePatterns.filter(validateGlobPattern);
+    if (validExcludePatterns.length !== excludePatterns.length) {
+      console.warn(
+        "Some exclude patterns were filtered out for security reasons"
+      );
+    }
+
     // Get all files in workspace
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
     const allFiles = await glob("**/*", {
       cwd: workspaceRoot,
-      ignore: excludePatterns,
+      ignore: validExcludePatterns,
       nodir: true,
     });
 
     const filePaths = allFiles.map((file) => path.join(workspaceRoot, file));
     await performBundling(filePaths);
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to bundle workspace: ${error}`);
+    handleError(error, "bundleWorkspace");
   }
 }
 
 async function performBundling(filePaths: string[]) {
+  const startTime = Date.now();
+
   try {
     // Show progress
     await vscode.window.withProgress(
@@ -214,6 +258,17 @@ async function performBundling(filePaths: string[]) {
         const depth = config.get<number>("depth", 2);
         const outputFormat = config.get<string>("outputFormat", "text");
         const aliases = config.get<Record<string, string>>("aliases", {});
+
+        // Validate configuration
+        if (depth < 1 || depth > 10) {
+          throw new Error("Depth must be between 1 and 10");
+        }
+
+        if (!["text", "json", "markdown"].includes(outputFormat)) {
+          throw new Error(
+            "Invalid output format. Must be 'text', 'json', or 'markdown'"
+          );
+        }
 
         // Bundle the files
         const result = await featureBundler.bundleFiles(filePaths, {
@@ -246,22 +301,32 @@ async function performBundling(filePaths: string[]) {
           dependenciesCount: result.dependencies.length,
         });
 
-        await vscode.commands.executeCommand(
-          "setContext",
-          "feature-bundler.hasDependencies",
-          hasDependencies
-        );
-        await vscode.commands.executeCommand(
-          "setContext",
-          "feature-bundler.hasOutput",
-          hasOutput
-        );
+        // Update context keys with error handling
+        try {
+          await vscode.commands.executeCommand(
+            "setContext",
+            "feature-bundler.hasDependencies",
+            hasDependencies
+          );
+          await vscode.commands.executeCommand(
+            "setContext",
+            "feature-bundler.hasOutput",
+            hasOutput
+          );
+        } catch (error) {
+          console.warn("Failed to update context keys:", error);
+        }
 
         progress.report({ message: "Complete!", increment: 100 });
 
-        // Show success message
+        // Calculate and log performance metrics
+        const endTime = Date.now();
+        const processingTime = endTime - startTime;
+        console.log(`📊 Bundling completed in ${processingTime}ms`);
+
+        // Show success message with performance info
         vscode.window.showInformationMessage(
-          `Successfully bundled ${result.filesProcessed} files with ${result.dependencies.length} dependencies`
+          `Successfully bundled ${result.filesProcessed} files with ${result.dependencies.length} dependencies in ${processingTime}ms`
         );
 
         // Open output in new editor
@@ -290,7 +355,10 @@ async function performBundling(filePaths: string[]) {
       }
     );
   } catch (error) {
-    vscode.window.showErrorMessage(`Bundling failed: ${error}`);
+    const endTime = Date.now();
+    const processingTime = endTime - startTime;
+    console.error(`❌ Bundling failed after ${processingTime}ms:`, error);
+    handleError(error, "performBundling");
   }
 }
 
@@ -301,7 +369,7 @@ async function showDependencies() {
       "feature-bundler.dependenciesView.focus"
     );
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to show dependencies: ${error}`);
+    handleError(error, "showDependencies");
   }
 }
 
@@ -317,7 +385,7 @@ async function exportToClipboard() {
       vscode.window.showWarningMessage("No bundled output available");
     }
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to export to clipboard: ${error}`);
+    handleError(error, "exportToClipboard");
   }
 }
 
@@ -343,11 +411,11 @@ async function toggleWatchMode() {
       );
     }
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to toggle watch mode: ${error}`);
+    handleError(error, "toggleWatchMode");
   }
 }
 
-async function handleOutputAction(action: string) {
+async function handleOutputAction(action: "copy" | "open" | "save") {
   try {
     const output = outputProvider.getCurrentOutput();
     if (!output) {
@@ -379,7 +447,7 @@ async function handleOutputAction(action: string) {
         vscode.window.showWarningMessage(`Unknown action: ${action}`);
     }
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to handle output action: ${error}`);
+    handleError(error, "handleOutputAction");
   }
 }
 
@@ -391,7 +459,7 @@ async function showOutput(output: string) {
     });
     await vscode.window.showTextDocument(document);
   } catch (error) {
-    vscode.window.showErrorMessage(`Failed to show output: ${error}`);
+    handleError(error, "showOutput");
   }
 }
 

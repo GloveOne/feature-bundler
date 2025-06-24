@@ -41,6 +41,7 @@ const glob_1 = require("glob");
 class FeatureBundler {
     constructor() {
         this.watchModeActive = false;
+        this.fileWatchers = [];
         this.lastBundledFiles = [];
     }
     async bundleFiles(filePaths, options) {
@@ -215,7 +216,14 @@ class FeatureBundler {
             if (ref.startsWith(alias + "/") || ref === alias) {
                 const relativePath = ref.substring(alias.length);
                 const resolvedAliasPath = path.resolve(aliasPath);
-                return path.join(resolvedAliasPath, relativePath);
+                const result = path.join(resolvedAliasPath, relativePath);
+                // Validate that the resolved path is within the workspace
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (workspaceRoot && !result.startsWith(workspaceRoot)) {
+                    console.warn(`Path outside workspace: ${result}`);
+                    return ref; // Return original if outside workspace
+                }
+                return result;
             }
         }
         return ref;
@@ -304,24 +312,24 @@ class FeatureBundler {
         this.watchModeActive = true;
         // Watch for changes in the last bundled files
         if (this.lastBundledFiles.length > 0) {
-            this.fileWatcher = vscode.workspace.createFileSystemWatcher(`{${this.lastBundledFiles.join(",")}}`);
-            this.fileWatcher.onDidChange(async (uri) => {
-                await this.handleFileChange(uri);
-            });
-            this.fileWatcher.onDidCreate(async (uri) => {
-                await this.handleFileChange(uri);
-            });
-            this.fileWatcher.onDidDelete(async (uri) => {
-                await this.handleFileChange(uri);
+            this.fileWatchers = this.lastBundledFiles.map((file) => vscode.workspace.createFileSystemWatcher(file));
+            this.fileWatchers.forEach((watcher) => {
+                watcher.onDidChange(async (uri) => {
+                    await this.handleFileChange(uri);
+                });
+                watcher.onDidCreate(async (uri) => {
+                    await this.handleFileChange(uri);
+                });
+                watcher.onDidDelete(async (uri) => {
+                    await this.handleFileChange(uri);
+                });
             });
         }
     }
     stopWatchMode() {
         this.watchModeActive = false;
-        if (this.fileWatcher) {
-            this.fileWatcher.dispose();
-            this.fileWatcher = undefined;
-        }
+        this.fileWatchers.forEach((watcher) => watcher.dispose());
+        this.fileWatchers = [];
     }
     isWatchModeActive() {
         return this.watchModeActive;
